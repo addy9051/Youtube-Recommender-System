@@ -3,7 +3,6 @@ import Header from "@/components/Header";
 import VideoPlayer from "@/components/VideoPlayer";
 import VideoGrid from "@/components/VideoGrid";
 import Footer from "@/components/Footer";
-import Notification from "@/components/Notification";
 import { useAppContext } from "@/context/AppContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -119,7 +118,6 @@ export default function Home() {
       </main>
 
       <Footer />
-      <Notification />
     </div>
   );
 }

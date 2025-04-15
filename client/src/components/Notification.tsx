@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useAppContext } from "@/context/AppContext";
+import { useAppContext } from "../context/AppContext";
 
 export default function Notification() {
   const { notification, hideNotification } = useAppContext();
