@@ -672,9 +672,9 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "google-api-python-client" },
-    { name = "google-auth" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "pillow" },
     { name = "plotly" },
     { name = "python-dotenv" },
     { name = "requests" },
@@ -685,9 +685,9 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "google-api-python-client", specifier = ">=2.167.0" },
-    { name = "google-auth", specifier = ">=2.39.0" },
     { name = "numpy", specifier = ">=2.2.4" },
     { name = "pandas", specifier = ">=2.2.3" },
+    { name = "pillow", specifier = ">=11.2.1" },
     { name = "plotly", specifier = ">=6.0.1" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "requests", specifier = ">=2.32.3" },

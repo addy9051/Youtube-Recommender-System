@@ -1,316 +1,435 @@
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
-import pandas as pd
-import datetime
+from sklearn.metrics.pairwise import cosine_similarity
+import json
 import random
+from datetime import datetime
+import pandas as pd
 
 class RecommendationEngine:
     def __init__(self):
         """Initialize the recommendation engine"""
-        self.videos = {}  # video_id -> video_data
-        self.user_history = {}  # user_id -> list of (video_id, timestamp, watched_percentage)
-        self.tfidf_vectorizer = TfidfVectorizer(stop_words='english')
+        # Store all videos for content-based filtering
+        self.videos = {}
+        
+        # Store watch history for collaborative filtering
+        # Format: {user_id: [{video_id, timestamp, watched_percentage}]}
+        self.watch_history = {}
+        
+        # Content vectors for similarity comparison
         self.content_vectors = None
         self.video_ids = []
-    
+        self.tfidf_matrix = None
+        
+        # Initialize TF-IDF vectorizer
+        self.vectorizer = TfidfVectorizer(
+            max_features=5000,
+            stop_words='english',
+            ngram_range=(1, 2)
+        )
+
     def add_videos(self, videos_list):
         """Add videos to the recommendation engine"""
+        if not videos_list:
+            return
+            
+        # Add videos to our collection
         for video in videos_list:
-            self.videos[video['id']] = video
+            self.videos[video["id"]] = video
+            
+        # Update content vectors when new videos are added
+        self._update_content_vectors()
         
-        # Update content vectors if we have videos
-        if self.videos:
-            self._update_content_vectors()
-    
-    def add_to_history(self, user_id, video_id, timestamp, watched_percentage=0):
+        print(f"Added {len(videos_list)} videos to recommendation engine. Total: {len(self.videos)}")
+
+    def add_to_history(self, user_id, video_id, timestamp=None, watched_percentage=0):
         """Add a video to a user's watch history"""
-        if user_id not in self.user_history:
-            self.user_history[user_id] = []
-        
-        # Check if video_id exists in our videos database
+        if not timestamp:
+            timestamp = datetime.now().isoformat()
+            
+        if user_id not in self.watch_history:
+            self.watch_history[user_id] = []
+            
+        # Check if the video exists in our collection
         if video_id not in self.videos:
-            print(f"Warning: Adding unknown video {video_id} to history")
+            print(f"Warning: Video {video_id} not found in video collection")
+            return
+            
+        # Add to watch history
+        history_item = {
+            "video_id": video_id,
+            "timestamp": timestamp,
+            "watched_percentage": watched_percentage
+        }
         
-        # Add to history, update if already exists
-        history_entry = (video_id, timestamp, watched_percentage)
-        
-        # Remove existing entry for this video if it exists
-        self.user_history[user_id] = [
-            entry for entry in self.user_history[user_id] 
-            if entry[0] != video_id
+        # Remove previous entries of the same video for this user
+        self.watch_history[user_id] = [
+            item for item in self.watch_history[user_id] 
+            if item["video_id"] != video_id
         ]
         
-        # Add new entry
-        self.user_history[user_id].append(history_entry)
+        # Add the new history item
+        self.watch_history[user_id].append(history_item)
         
-        # Sort by timestamp, most recent first
-        self.user_history[user_id].sort(key=lambda x: x[1], reverse=True)
-    
+        print(f"Added video {video_id} to user {user_id}'s history")
+
     def get_user_history(self, user_id, limit=20):
         """Get a user's watch history"""
-        if user_id not in self.user_history:
+        if user_id not in self.watch_history:
             return []
+            
+        # Sort by timestamp (most recent first)
+        sorted_history = sorted(
+            self.watch_history[user_id],
+            key=lambda x: x["timestamp"],
+            reverse=True
+        )
         
-        # Return history entries with video data
-        history = []
-        for video_id, timestamp, watched_percentage in self.user_history[user_id][:limit]:
+        # Get the full video objects
+        result = []
+        for item in sorted_history[:limit]:
+            video_id = item["video_id"]
             if video_id in self.videos:
-                history.append({
-                    'video': self.videos[video_id],
-                    'timestamp': timestamp,
-                    'watched_percentage': watched_percentage
-                })
-        
-        return history
-    
+                video = self.videos[video_id].copy()
+                video["watched_percentage"] = item["watched_percentage"]
+                result.append(video)
+                
+        return result
+
     def clear_history(self, user_id=None):
         """Clear watch history for a user or all users"""
         if user_id:
-            if user_id in self.user_history:
-                self.user_history[user_id] = []
+            if user_id in self.watch_history:
+                self.watch_history[user_id] = []
+                print(f"Cleared history for user {user_id}")
         else:
-            self.user_history = {}
-    
+            self.watch_history = {}
+            print("Cleared all user history")
+
     def _update_content_vectors(self):
         """Update content vectors for similarity calculations"""
         if not self.videos:
             return
-        
-        self.video_ids = list(self.videos.keys())
-        documents = []
-        
-        for video_id in self.video_ids:
-            video = self.videos[video_id]
-            # Combine title, description, tags, and channel for content-based filtering
-            content = f"{video['title']} {video['description']} {' '.join(video.get('tags', []))} {video['channel_title']}"
-            documents.append(content)
-        
-        try:
-            # Use TF-IDF to create content vectors
-            self.content_vectors = self.tfidf_vectorizer.fit_transform(documents)
-        except Exception as e:
-            print(f"Error creating content vectors: {e}")
-            self.content_vectors = None
-    
-    def calculate_similarity(self, video_a, video_b):
-        """Calculate similarity score between two videos"""
-        if not video_a or not video_b:
-            return 0.0
-        
-        # Category similarity (exact match = higher score)
-        category_similarity = 1.0 if video_a.get('category_id') == video_b.get('category_id') else 0.0
-        
-        # Channel similarity
-        channel_similarity = 1.0 if video_a.get('channel_id') == video_b.get('channel_id') else 0.0
-        
-        # Tag similarity - calculate Jaccard similarity between tag sets
-        tags_a = set(video_a.get('tags', []))
-        tags_b = set(video_b.get('tags', []))
-        tag_similarity = 0.0
-        if tags_a and tags_b:
-            intersection = len(tags_a.intersection(tags_b))
-            union = len(tags_a.union(tags_b))
-            tag_similarity = intersection / union if union > 0 else 0.0
-        
-        # Calculate weights - prioritize channel and category
-        weights = {
-            'category': 0.3,
-            'channel': 0.4,
-            'tags': 0.3
-        }
-        
-        # Weighted similarity
-        similarity = (
-            weights['category'] * category_similarity +
-            weights['channel'] * channel_similarity +
-            weights['tags'] * tag_similarity
-        )
-        
-        return similarity
-    
-    def get_content_based_recommendations(self, source_video_id, limit=8, category_id=None):
-        """Get recommendations based on content similarity to a source video"""
-        if not self.videos or source_video_id not in self.videos:
-            return []
-        
-        source_video = self.videos[source_video_id]
-        candidates = []
-        
-        # If we have content vectors, use them for similarity
-        if self.content_vectors is not None and len(self.video_ids) > 1:
-            try:
-                source_idx = self.video_ids.index(source_video_id)
-                similarities = cosine_similarity(
-                    self.content_vectors[source_idx:source_idx+1], 
-                    self.content_vectors
-                )[0]
-                
-                # Create (video_id, similarity) pairs
-                video_similarities = list(zip(self.video_ids, similarities))
-                
-                # Sort by similarity descending
-                video_similarities.sort(key=lambda x: x[1], reverse=True)
-                
-                # Filter by category if needed
-                if category_id:
-                    video_similarities = [
-                        (vid, sim) for vid, sim in video_similarities 
-                        if self.videos[vid].get('category_id') == category_id
-                    ]
-                
-                # Skip the source video itself
-                candidates = [
-                    self.videos[vid] for vid, sim in video_similarities 
-                    if vid != source_video_id
-                ][:limit]
-                
-            except Exception as e:
-                print(f"Error in content-based recommendation: {e}")
-                candidates = []
-        
-        # Fall back to manual similarity calculation if needed
-        if not candidates:
-            all_videos = list(self.videos.values())
             
-            # Calculate similarity for each video
-            video_similarities = [
-                (video, self.calculate_similarity(source_video, video))
-                for video in all_videos
-                if video['id'] != source_video_id
+        # Create content text for each video
+        video_ids = []
+        content_texts = []
+        
+        for video_id, video in self.videos.items():
+            # Combine title, description, tags, and channel into a single text
+            text_elements = [
+                video.get("title", ""),
+                video.get("description", ""),
+                video.get("channelTitle", ""),
+                # Add category name if available
+                video.get("categoryId", ""),
             ]
             
-            # Filter by category if needed
-            if category_id:
-                video_similarities = [
-                    (video, sim) for video, sim in video_similarities 
-                    if video.get('category_id') == category_id
-                ]
+            # Add tags (if available)
+            tags = video.get("tags", [])
+            if tags:
+                text_elements.extend(tags)
+                
+            # Join all text elements with spaces
+            content_text = " ".join([str(elem) for elem in text_elements if elem])
             
-            # Sort by similarity score (descending)
-            video_similarities.sort(key=lambda x: x[1], reverse=True)
+            video_ids.append(video_id)
+            content_texts.append(content_text)
             
-            candidates = [video for video, sim in video_similarities[:limit]]
+        # Update stored video IDs
+        self.video_ids = video_ids
         
-        return candidates
-    
-    def get_collaborative_recommendations(self, user_id, limit=8, category_id=None):
-        """Get recommendations based on collaborative filtering"""
-        if user_id not in self.user_history or not self.user_history[user_id]:
-            # User has no history, return empty list
+        # Create TF-IDF matrix
+        try:
+            self.tfidf_matrix = self.vectorizer.fit_transform(content_texts)
+            print(f"Updated content vectors for {len(video_ids)} videos")
+        except Exception as e:
+            print(f"Error creating content vectors: {e}")
+            self.tfidf_matrix = None
+
+    def calculate_similarity(self, video_a, video_b):
+        """Calculate similarity score between two videos"""
+        # Basic content-based similarity using text features
+        # Combine title, channel, category and tags
+        features_a = [
+            video_a.get("title", ""),
+            video_a.get("channelTitle", ""),
+            video_a.get("categoryId", ""),
+            " ".join(video_a.get("tags", []))
+        ]
+        
+        features_b = [
+            video_b.get("title", ""),
+            video_b.get("channelTitle", ""),
+            video_b.get("categoryId", ""),
+            " ".join(video_b.get("tags", []))
+        ]
+        
+        # Count matching features
+        score = 0
+        
+        # Exact matches
+        if video_a.get("channelTitle") == video_b.get("channelTitle"):
+            score += 0.5  # Same channel is a strong signal
+            
+        if video_a.get("categoryId") == video_b.get("categoryId"):
+            score += 0.3  # Same category is a medium signal
+            
+        # Tags overlap
+        tags_a = set(video_a.get("tags", []))
+        tags_b = set(video_b.get("tags", []))
+        
+        if tags_a and tags_b:
+            jaccard = len(tags_a.intersection(tags_b)) / len(tags_a.union(tags_b))
+            score += jaccard * 0.2
+            
+        return min(score, 1.0)  # Cap at 1.0
+
+    def get_content_based_recommendations(self, source_video_id, limit=8, category_id=None):
+        """Get recommendations based on content similarity to a source video"""
+        if source_video_id not in self.videos:
+            print(f"Video {source_video_id} not found")
             return []
-        
-        # Get videos this user has watched
-        user_videos = set(entry[0] for entry in self.user_history[user_id])
-        
-        # Candidate videos the user hasn't watched yet
-        candidates = []
-        
-        # Simple collaborative approach - find users with similar viewing history
-        for other_user_id, other_history in self.user_history.items():
-            if other_user_id == user_id:
-                continue
             
-            # Get videos the other user has watched
-            other_videos = set(entry[0] for entry in other_history)
+        if not self.tfidf_matrix is not None and len(self.video_ids) != self.tfidf_matrix.shape[0]:
+            self._update_content_vectors()
             
-            # Calculate intersection (videos both users have watched)
-            common_videos = user_videos.intersection(other_videos)
-            
-            # If users have common videos, recommend other user's videos
-            if common_videos:
-                # Calculate similarity between users based on common videos
-                similarity = len(common_videos) / max(len(user_videos), len(other_videos))
+        source_video = self.videos[source_video_id]
+        recommendations = []
+        
+        # Method 1: Use TF-IDF similarity if available
+        if self.tfidf_matrix is not None:
+            try:
+                # Get index of the source video
+                source_index = self.video_ids.index(source_video_id)
                 
-                # Add videos this user hasn't watched yet
-                new_videos = other_videos - user_videos
+                # Calculate similarity scores
+                similarity_scores = cosine_similarity(
+                    self.tfidf_matrix[source_index], 
+                    self.tfidf_matrix
+                ).flatten()
                 
-                for video_id in new_videos:
-                    if video_id in self.videos:
+                # Get indices of top similar videos
+                similar_indices = similarity_scores.argsort()[:-limit-1:-1]
+                
+                # Filter out the source video itself
+                similar_indices = [idx for idx in similar_indices 
+                                  if self.video_ids[idx] != source_video_id]
+                
+                # Filter by category if specified
+                if category_id:
+                    filtered_videos = []
+                    for idx in similar_indices:
+                        video_id = self.video_ids[idx]
                         video = self.videos[video_id]
+                        if video.get("categoryId") == category_id:
+                            video_copy = video.copy()
+                            video_copy["score"] = float(similarity_scores[idx])
+                            filtered_videos.append(video_copy)
+                    recommendations = filtered_videos[:limit]
+                else:
+                    # Get videos and add similarity score
+                    for idx in similar_indices[:limit]:
+                        video_id = self.video_ids[idx]
+                        video = self.videos[video_id].copy()
+                        video["score"] = float(similarity_scores[idx])
+                        recommendations.append(video)
                         
-                        # Filter by category if needed
-                        if category_id and video.get('category_id') != category_id:
-                            continue
-                        
-                        candidates.append((video, similarity))
+                return recommendations
+            except Exception as e:
+                print(f"Error in TF-IDF similarity: {e}")
+                # Fall back to manual similarity
+        
+        # Method 2: Manual similarity calculation (fallback)
+        # Calculate similarity for each video
+        for video_id, video in self.videos.items():
+            # Skip the source video
+            if video_id == source_video_id:
+                continue
+                
+            # Filter by category if specified
+            if category_id and video.get("categoryId") != category_id:
+                continue
+                
+            # Calculate similarity
+            similarity = self.calculate_similarity(source_video, video)
+            
+            # Add to recommendations if there's some similarity
+            if similarity > 0:
+                video_copy = video.copy()
+                video_copy["score"] = similarity
+                recommendations.append(video_copy)
         
         # Sort by similarity score (descending)
-        candidates.sort(key=lambda x: x[1], reverse=True)
+        recommendations.sort(key=lambda x: x["score"], reverse=True)
         
-        # Return top recommendations
-        return [video for video, _ in candidates[:limit]]
-    
+        return recommendations[:limit]
+
+    def get_collaborative_recommendations(self, user_id, limit=8, category_id=None):
+        """Get recommendations based on collaborative filtering"""
+        if user_id not in self.watch_history or not self.watch_history[user_id]:
+            return []
+            
+        # Get user's watched videos
+        user_videos = set(item["video_id"] for item in self.watch_history[user_id])
+        
+        # Find other users who have watched similar videos
+        similar_users = []
+        for other_id, history in self.watch_history.items():
+            if other_id == user_id:
+                continue
+                
+            other_videos = set(item["video_id"] for item in history)
+            
+            # Calculate Jaccard similarity (overlap of watched videos)
+            if user_videos and other_videos:
+                overlap = len(user_videos.intersection(other_videos))
+                similarity = overlap / len(user_videos.union(other_videos))
+                
+                if similarity > 0:
+                    similar_users.append({
+                        "user_id": other_id,
+                        "similarity": similarity
+                    })
+        
+        # Sort by similarity
+        similar_users.sort(key=lambda x: x["similarity"], reverse=True)
+        
+        # Get recommendations from similar users
+        candidate_videos = {}
+        
+        for similar_user in similar_users[:5]:  # Consider top 5 similar users
+            other_id = similar_user["user_id"]
+            user_similarity = similar_user["similarity"]
+            
+            for history_item in self.watch_history[other_id]:
+                video_id = history_item["video_id"]
+                
+                # Skip videos the user has already watched
+                if video_id in user_videos:
+                    continue
+                    
+                # Skip videos not in our collection
+                if video_id not in self.videos:
+                    continue
+                    
+                # Filter by category if specified
+                if category_id and self.videos[video_id].get("categoryId") != category_id:
+                    continue
+                
+                # Add the video to candidates with weighted score
+                watched_pct = history_item.get("watched_percentage", 0)
+                candidate_score = user_similarity * (0.5 + 0.5 * watched_pct / 100)
+                
+                if video_id in candidate_videos:
+                    candidate_videos[video_id] += candidate_score
+                else:
+                    candidate_videos[video_id] = candidate_score
+        
+        # Create recommendation list with scores
+        recommendations = []
+        for video_id, score in candidate_videos.items():
+            video = self.videos[video_id].copy()
+            video["score"] = float(score)
+            recommendations.append(video)
+            
+        # Sort by score (descending)
+        recommendations.sort(key=lambda x: x["score"], reverse=True)
+        
+        return recommendations[:limit]
+
     def get_hybrid_recommendations(self, user_id=None, video_id=None, category_id=None, limit=8):
         """Get hybrid recommendations using both content-based and collaborative filtering"""
-        if not self.videos:
-            return []
+        content_recs = []
+        collab_recs = []
         
-        content_recommendations = []
-        collaborative_recommendations = []
-        
-        # If we have a source video, get content-based recommendations
+        # Get content-based recommendations if video_id is provided
         if video_id and video_id in self.videos:
-            content_recommendations = self.get_content_based_recommendations(
-                video_id, limit=limit, category_id=category_id
+            content_recs = self.get_content_based_recommendations(
+                video_id, 
+                limit=limit,
+                category_id=category_id
             )
         
-        # If we have a user, get collaborative recommendations
-        if user_id and user_id in self.user_history:
-            collaborative_recommendations = self.get_collaborative_recommendations(
-                user_id, limit=limit, category_id=category_id
+        # Get collaborative recommendations if user_id is provided
+        if user_id and user_id in self.watch_history:
+            collab_recs = self.get_collaborative_recommendations(
+                user_id,
+                limit=limit,
+                category_id=category_id
             )
-        
-        # Combine recommendations (avoid duplicates)
-        seen_ids = set()
-        hybrid_recommendations = []
-        
-        # Add content-based recommendations first (2/3 of the limit)
-        content_limit = min(len(content_recommendations), int(limit * 2/3))
-        for video in content_recommendations[:content_limit]:
-            if video['id'] not in seen_ids:
-                hybrid_recommendations.append(video)
-                seen_ids.add(video['id'])
-        
-        # Then add collaborative recommendations
-        for video in collaborative_recommendations:
-            if video['id'] not in seen_ids and len(hybrid_recommendations) < limit:
-                hybrid_recommendations.append(video)
-                seen_ids.add(video['id'])
-        
-        # If we still need more recommendations, add trending or similar videos
-        if len(hybrid_recommendations) < limit:
-            all_videos = list(self.videos.values())
             
-            # Filter by category if needed
-            if category_id:
-                all_videos = [v for v in all_videos if v.get('category_id') == category_id]
+        # If we have both types of recommendations
+        if content_recs and collab_recs:
+            # Combine both recommendation sets
+            all_recs = {}
             
-            # Sort by view count (descending) as a proxy for popularity
-            all_videos.sort(key=lambda x: x.get('view_count', 0), reverse=True)
+            # Add content-based recommendations
+            for video in content_recs:
+                all_recs[video["id"]] = {
+                    "video": video,
+                    "content_score": video["score"],
+                    "collab_score": 0
+                }
+                
+            # Add/update with collaborative recommendations
+            for video in collab_recs:
+                if video["id"] in all_recs:
+                    all_recs[video["id"]]["collab_score"] = video["score"]
+                else:
+                    all_recs[video["id"]] = {
+                        "video": video,
+                        "content_score": 0,
+                        "collab_score": video["score"]
+                    }
             
-            # Add popular videos not already in recommendations
-            for video in all_videos:
-                if video['id'] not in seen_ids and len(hybrid_recommendations) < limit:
-                    hybrid_recommendations.append(video)
-                    seen_ids.add(video['id'])
+            # Calculate hybrid scores (60% content, 40% collaborative)
+            hybrid_recs = []
+            for rec_data in all_recs.values():
+                video = rec_data["video"].copy()
+                hybrid_score = 0.6 * rec_data["content_score"] + 0.4 * rec_data["collab_score"]
+                video["score"] = float(hybrid_score)
+                hybrid_recs.append(video)
+                
+            # Sort by hybrid score
+            hybrid_recs.sort(key=lambda x: x["score"], reverse=True)
+            return hybrid_recs[:limit]
+            
+        # If we only have one type, return that
+        elif content_recs:
+            return content_recs
+        elif collab_recs:
+            return collab_recs
         
-        return hybrid_recommendations
-    
+        # If no recommendations, return trending videos
+        return self.get_trending_videos(category_id, limit)
+
     def get_trending_videos(self, category_id=None, limit=10):
         """Get trending videos based on view counts"""
         if not self.videos:
             return []
-        
-        # Get all videos
-        all_videos = list(self.videos.values())
-        
-        # Filter by category if needed
-        if category_id:
-            all_videos = [video for video in all_videos if video.get('category_id') == category_id]
-        
+            
+        # Create a list of videos
+        trending_videos = []
+        for video_id, video in self.videos.items():
+            # Filter by category if specified
+            if category_id and video.get("categoryId") != category_id:
+                continue
+                
+            # Add to trending list
+            trending_videos.append(video.copy())
+            
         # Sort by view count (descending)
-        all_videos.sort(key=lambda x: x.get('view_count', 0), reverse=True)
+        trending_videos.sort(key=lambda x: x.get("viewCount", 0), reverse=True)
         
-        # Return top trending videos
-        return all_videos[:limit]
+        # Apply a scoring based on views + recent publishing
+        for video in trending_videos:
+            # Get view count (default to 0)
+            view_count = video.get("viewCount", 0)
+            
+            # Calculate a trending score
+            # Score is primarily based on view count, scaled logarithmically
+            log_views = np.log1p(view_count) if view_count > 0 else 0
+            video["score"] = float(log_views / 20)  # Normalize to 0-1 range
+            
+        return trending_videos[:limit]

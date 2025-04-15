@@ -1,31 +1,29 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
+import re
+import time
+import json
 from datetime import datetime
-import os
-import sys
-
-# Add current directory to path to fix import issues
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from youtube_api import youtube_api
-from recommendation_engine import recommendation_engine
-import base64
+import random
+import plotly.express as px
 from dotenv import load_dotenv
+import os
 
 # Load environment variables
 load_dotenv()
 
-# Print API key status for debugging
-if os.getenv('YOUTUBE_API_KEY'):
-    print("YouTube API key found! Using real YouTube data.")
-else:
-    print("WARNING: YouTube API key not found. Using mock data instead.")
+# Import our modules
+from youtube_api import YouTubeAPI
+from recommendation_engine import RecommendationEngine
+
+# Initialize global instances
+youtube_api = YouTubeAPI()
+recommendation_engine = RecommendationEngine()
 
 # Set page config
 st.set_page_config(
-    page_title="YouTube Recommender",
+    page_title="YouTube Recommendation Engine",
     page_icon="🎬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -34,257 +32,243 @@ st.set_page_config(
 # Apply custom CSS
 st.markdown("""
 <style>
-    .main {
+    .stApp {
         background-color: #f9f9f9;
     }
-    .stApp {
-        font-family: 'Roboto', sans-serif;
-    }
     .video-card {
-        border-radius: 8px;
-        transition: transform 0.2s;
-        cursor: pointer;
+        border-radius: 10px;
+        overflow: hidden;
+        transition: transform 0.3s;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        background-color: white;
+        height: 100%;
     }
     .video-card:hover {
         transform: translateY(-5px);
-    }
-    .category-pill {
-        background-color: #e0e0e0;
-        border-radius: 16px;
-        padding: 5px 12px;
-        margin: 5px;
-        cursor: pointer;
-        display: inline-block;
-        font-size: 0.8em;
-    }
-    .category-pill.active {
-        background-color: #4285f4;
-        color: white;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        border-radius: 4px 4px 0 0;
-        padding: 10px 16px;
-        font-weight: 500;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #4285f4;
-        color: white;
-    }
-    .search-box {
-        border-radius: 24px;
-        border: 1px solid #dfe1e5;
-        box-shadow: none;
-        padding: 10px 16px;
-    }
-    .metric-card {
-        background-color: white;
-        border-radius: 8px;
-        padding: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-        text-align: center;
+        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
     }
     .video-title {
-        font-weight: 500;
-        font-size: 1.1em;
-        margin-top: 8px;
+        font-weight: 600;
         overflow: hidden;
         text-overflow: ellipsis;
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
     }
+    .video-meta {
+        font-size: 0.8rem;
+        color: #606060;
+    }
     .channel-name {
-        color: #606060;
-        font-size: 0.9em;
-        margin-top: 4px;
+        font-weight: 500;
+        color: #030303;
     }
-    .view-count {
-        color: #606060;
-        font-size: 0.8em;
+    .category-pill {
+        background-color: #f0f0f0;
+        border-radius: 20px;
+        padding: 5px 15px;
+        margin: 5px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 0.9rem;
     }
-    .similarity-score {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        background-color: rgba(0,0,0,0.7);
+    .category-pill:hover, .category-pill.active {
+        background-color: #ff0000;
         color: white;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-size: 0.8em;
     }
-    .iframe-container {
-        position: relative;
+    .sidebar-content {
+        padding: 20px 10px;
+    }
+    .progress-bar-container {
+        height: 4px;
+        background-color: #e0e0e0;
+        border-radius: 2px;
         overflow: hidden;
-        width: 100%;
-        padding-top: 56.25%; /* 16:9 Aspect Ratio */
+        margin-top: 5px;
     }
-    .responsive-iframe {
+    .progress-bar {
+        height: 100%;
+        background-color: #ff0000;
+    }
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 15px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #f0f0f0;
+    }
+    .search-container {
+        margin-bottom: 20px;
+    }
+    .header-container {
+        background-color: white;
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .current-video-container {
+        background-color: white;
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .video-player-container {
+        position: relative;
+        padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+        height: 0;
+        overflow: hidden;
+    }
+    .video-player-container iframe {
         position: absolute;
         top: 0;
         left: 0;
-        bottom: 0;
-        right: 0;
         width: 100%;
         height: 100%;
-        border: none;
+        border-radius: 8px;
+    }
+    .insights-container {
+        background-color: white;
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
+# Global state for the application
+if 'user_id' not in st.session_state:
+    st.session_state.user_id = 1  # Default user ID
 if 'current_video' not in st.session_state:
     st.session_state.current_video = None
-if 'search_query' not in st.session_state:
-    st.session_state.search_query = ""
-if 'current_category' not in st.session_state:
-    st.session_state.current_category = "all"
-if 'user_id' not in st.session_state:
-    st.session_state.user_id = 1  # Default user ID for demo
-if 'videos' not in st.session_state:
-    st.session_state.videos = []
-if 'trending_videos' not in st.session_state:
-    st.session_state.trending_videos = []
-if 'history_videos' not in st.session_state:
-    st.session_state.history_videos = []
-if 'recommended_videos' not in st.session_state:
-    st.session_state.recommended_videos = []
+if 'history' not in st.session_state:
+    st.session_state.history = []
+if 'search_results' not in st.session_state:
+    st.session_state.search_results = []
+if 'recommendations' not in st.session_state:
+    st.session_state.recommendations = []
+if 'selected_category' not in st.session_state:
+    st.session_state.selected_category = None
 if 'categories' not in st.session_state:
-    st.session_state.categories = youtube_api.get_categories()
-if 'api_key_set' not in st.session_state:
-    st.session_state.api_key_set = bool(os.getenv('YOUTUBE_API_KEY'))
+    st.session_state.categories = []
 
-# Formatting helper functions
+
 def format_count(count):
     """Format large numbers with K, M, B suffixes"""
-    count = int(count) if count.isdigit() else 0
+    if count is None:
+        return "0"
+    
+    count = int(count)
     if count < 1000:
         return str(count)
     elif count < 1000000:
-        return f"{count/1000:.1f}K".replace('.0K', 'K')
+        return f"{count/1000:.1f}K".replace(".0K", "K")
     elif count < 1000000000:
-        return f"{count/1000000:.1f}M".replace('.0M', 'M')
+        return f"{count/1000000:.1f}M".replace(".0M", "M")
     else:
-        return f"{count/1000000000:.1f}B".replace('.0B', 'B')
+        return f"{count/1000000000:.1f}B".replace(".0B", "B")
+
 
 def format_duration(duration):
     """Format YouTube duration (PT1H2M3S) into readable format (1:02:03)"""
-    if not duration:
-        return "Unknown"
+    if not duration or duration == "PT0M0S":
+        return "0:00"
     
-    duration = duration.replace('PT', '')
-    hours, minutes, seconds = 0, 0, 0
+    # Extract hours, minutes, seconds
+    hours_match = re.search(r'(\d+)H', duration)
+    minutes_match = re.search(r'(\d+)M', duration)
+    seconds_match = re.search(r'(\d+)S', duration)
     
-    if 'H' in duration:
-        hours, duration = duration.split('H')
-        hours = int(hours)
+    hours = int(hours_match.group(1)) if hours_match else 0
+    minutes = int(minutes_match.group(1)) if minutes_match else 0
+    seconds = int(seconds_match.group(1)) if seconds_match else 0
     
-    if 'M' in duration:
-        minutes, duration = duration.split('M')
-        minutes = int(minutes)
-    
-    if 'S' in duration:
-        seconds = int(duration.replace('S', ''))
-    
+    # Format based on duration
     if hours > 0:
         return f"{hours}:{minutes:02d}:{seconds:02d}"
     else:
         return f"{minutes}:{seconds:02d}"
 
+
 def render_video_card(video, show_score=False, score=None, show_progress=False, progress=0):
     """Render a video card with thumbnail and metadata"""
-    col1, col2 = st.columns([1, 3])
+    score_display = ""
+    if show_score and score is not None:
+        score_display = f"<div style='position:absolute;top:5px;right:5px;background:rgba(0,0,0,0.7);color:white;padding:2px 6px;border-radius:3px;font-size:0.8rem;'>{score:.2f}</div>"
     
-    with col1:
-        # Calculate image dimensions and aspect ratio
-        thumbnail_url = video.get('thumbnail', '')
-        if thumbnail_url:
-            if show_score and score is not None:
-                score_html = f'<div class="similarity-score">{score:.1f}%</div>'
-            else:
-                score_html = ''
-                
-            if show_progress and progress > 0:
-                progress_pct = min(progress, 100)
-                progress_bar = f'''
-                <div style="height: 3px; width: 100%; background-color: #e0e0e0; position: absolute; bottom: 0; left: 0;">
-                    <div style="height: 100%; width: {progress_pct}%; background-color: red;"></div>
-                </div>
-                '''
-            else:
-                progress_bar = ''
-                
-            # Create a container with relative positioning
-            st.markdown(f'''
-            <div style="position: relative; cursor: pointer;" onclick="handleVideoClick('{video['id']}')">
-                <img src="{thumbnail_url}" width="100%" style="border-radius: 8px;">
-                {score_html}
-                {progress_bar}
-                <div style="position: absolute; bottom: 5px; right: 5px; background-color: rgba(0,0,0,0.8); color: white; padding: 2px 4px; border-radius: 2px; font-size: 0.8em;">
-                    {format_duration(video.get('duration', ''))}
-                </div>
-            </div>
-            ''', unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f'''
-        <div style="cursor: pointer;" onclick="handleVideoClick('{video['id']}')">
-            <div class="video-title">{video.get('title', 'No Title')}</div>
-            <div class="channel-name">{video.get('channelTitle', '')}</div>
-            <div class="view-count">{format_count(video.get('viewCount', '0'))} views • {format_count(video.get('likeCount', '0'))} likes</div>
+    progress_bar = ""
+    if show_progress and progress > 0:
+        progress_bar = f"""
+        <div class="progress-bar-container">
+            <div class="progress-bar" style="width: {progress}%;"></div>
         </div>
-        ''', unsafe_allow_html=True)
+        """
     
-    st.markdown("---")
+    duration = format_duration(video.get("duration", ""))
+    duration_display = f"<div style='position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.7);color:white;padding:2px 6px;border-radius:3px;font-size:0.8rem;'>{duration}</div>"
+    
+    html = f"""
+    <div class="video-card">
+        <div style="position:relative;">
+            <img src="{video['thumbnails']['medium']['url']}" style="width:100%;height:180px;object-fit:cover;" alt="{video['title']}">
+            {duration_display}
+            {score_display}
+            {progress_bar}
+        </div>
+        <div style="padding:10px;">
+            <div class="video-title">{video['title']}</div>
+            <div class="video-meta">
+                <div class="channel-name">{video['channelTitle']}</div>
+                <div>{format_count(video['viewCount'])} views</div>
+            </div>
+        </div>
+    </div>
+    """
+    return html
+
 
 def load_initial_data():
     """Load initial data for the application"""
-    # Load trending videos
-    trending_videos = youtube_api.get_trending_videos(st.session_state.current_category)
+    # Get categories
+    categories = youtube_api.get_categories()
+    st.session_state.categories = categories
     
-    # Add to recommendation engine
+    # Get trending videos
+    trending_videos = youtube_api.get_trending_videos(max_results=20)
+    
+    # Add videos to recommendation engine
     recommendation_engine.add_videos(trending_videos)
     
-    # Store in session state
-    st.session_state.trending_videos = trending_videos
+    # Store recommendations
+    st.session_state.recommendations = trending_videos
     
-    # Load or reset recommended videos based on if we have a current video
-    if st.session_state.current_video:
-        recommended_videos = recommendation_engine.get_hybrid_recommendations(
-            user_id=st.session_state.user_id,
-            video_id=st.session_state.current_video.get('id'),
-            category_id=st.session_state.current_category
-        )
-    else:
-        recommended_videos = []
-    
-    st.session_state.recommended_videos = recommended_videos
-    
-    # Get user watch history
-    history_videos = recommendation_engine.get_user_history(st.session_state.user_id)
-    st.session_state.history_videos = history_videos
+    return trending_videos
+
 
 def handle_search():
     """Handle search functionality"""
-    if st.session_state.search_query:
+    search_query = st.session_state.search_query if 'search_query' in st.session_state else ""
+    
+    if search_query:
+        category_id = st.session_state.selected_category if st.session_state.selected_category else None
+        
         search_results = youtube_api.search_videos(
-            st.session_state.search_query,
-            st.session_state.current_category
+            query=search_query,
+            category_id=category_id,
+            max_results=20
         )
         
         # Add videos to recommendation engine
         recommendation_engine.add_videos(search_results)
         
-        # Update session state
-        st.session_state.videos = search_results
+        # Store search results
+        st.session_state.search_results = search_results
         
-        # Reset current video if needed
-        if st.session_state.current_video and st.session_state.current_video.get('id') not in [v.get('id') for v in search_results]:
-            st.session_state.current_video = None
+        # Store search query
+        st.session_state.last_search_query = search_query
+
 
 def handle_video_selection(video_id):
     """Handle video selection and update recommendations"""
@@ -292,399 +276,401 @@ def handle_video_selection(video_id):
     video = youtube_api.get_video_details(video_id)
     
     if video:
-        # Update current video
+        # Set as current video
         st.session_state.current_video = video
         
-        # Add to recommendation engine
-        recommendation_engine.add_videos([video])
-        
         # Add to watch history
-        now = datetime.now()
-        recommendation_engine.add_to_history(
-            st.session_state.user_id, 
-            video_id,
-            now,
-            0  # Initial watch percentage
-        )
+        user_id = st.session_state.user_id
+        recommendation_engine.add_to_history(user_id, video_id)
         
-        # Update recommendations
-        recommended_videos = recommendation_engine.get_hybrid_recommendations(
-            user_id=st.session_state.user_id,
+        # Update history in session
+        st.session_state.history = recommendation_engine.get_user_history(user_id)
+        
+        # Get recommendations
+        recommendations = recommendation_engine.get_hybrid_recommendations(
+            user_id=user_id,
             video_id=video_id,
-            category_id=st.session_state.current_category
+            category_id=st.session_state.selected_category,
+            limit=20
         )
-        st.session_state.recommended_videos = recommended_videos
         
-        # Update watch history
-        history_videos = recommendation_engine.get_user_history(st.session_state.user_id)
-        st.session_state.history_videos = history_videos
+        # Store recommendations
+        st.session_state.recommendations = recommendations
+
 
 def clear_history():
     """Clear user watch history"""
-    recommendation_engine.clear_history(st.session_state.user_id)
-    st.session_state.history_videos = []
-    
-    # Show success message
-    st.success("Watch history cleared successfully!")
+    user_id = st.session_state.user_id
+    recommendation_engine.clear_history(user_id)
+    st.session_state.history = []
+    st.success("Watch history cleared")
+
 
 def render_api_key_form():
     """Render form for user to input YouTube API key"""
-    st.markdown("## YouTube API Key Setup")
-    st.warning("""
-    The YouTube Recommender requires a YouTube Data API key to fetch real video data.
-    Without an API key, the app will use mock data for demonstration purposes.
-    """)
+    st.markdown("### YouTube API Key Required")
+    st.write("To access YouTube data, please provide your YouTube API key.")
     
-    with st.form("api_key_form"):
-        api_key = st.text_input("Enter YouTube API Key:", 
-                               type="password", 
-                               help="Get a key from https://console.developers.google.com/")
-        submitted = st.form_submit_button("Save API Key")
-        
-        if submitted and api_key:
-            # Save the API key (in a real app, store securely)
-            os.environ['YOUTUBE_API_KEY'] = api_key
+    api_key = st.text_input(
+        "Enter your YouTube API key",
+        type="password",
+        help="You can get this from the Google Cloud Console"
+    )
+    
+    if st.button("Save API Key"):
+        if api_key:
+            # Set environment variable
+            os.environ["YOUTUBE_API_KEY"] = api_key
             
-            # Update session state
-            st.session_state.api_key_set = True
-            
-            # Reload the YouTube API
+            # Reinitialize YouTube API
             youtube_api.api_key = api_key
             youtube_api.init_api()
             
-            # Show success message
-            st.success("API Key saved successfully! Reloading data...")
-            load_initial_data()
+            st.success("API key saved successfully!")
             st.experimental_rerun()
+        else:
+            st.error("Please enter a valid API key")
+
 
 def render_header():
     """Render the application header"""
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col1:
-        st.markdown("""
-        <h1 style="color: #4285f4; margin-bottom: 0;">
-            <span style="color: #ea4335;">Y</span><span style="color: #fbbc05;">o</span><span style="color: #4285f4;">u</span><span style="color: #34a853;">T</span><span style="color: #ea4335;">u</span><span style="color: #fbbc05;">b</span><span style="color: #4285f4;">e</span>
-            <span style="font-weight: 400;">Recommender</span>
-        </h1>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        search_query = st.text_input(
-            "Search for videos", 
-            value=st.session_state.search_query,
-            key="search_input",
-            placeholder="Search..."
-        )
-        
-        if search_query != st.session_state.search_query:
-            st.session_state.search_query = search_query
-            handle_search()
-    
-    with col3:
-        if not st.session_state.api_key_set:
-            st.button("Set YouTube API Key", on_click=lambda: st.session_state.update({"show_api_form": True}))
-        
-        # Add settings gear and about button
-        cols = st.columns(2)
-        with cols[0]:
-            st.button("⚙️", help="Settings")
-        with cols[1]:
-            st.button("ℹ️", help="About")
+    st.markdown(
+        """
+        <div class="header-container">
+            <h1 style="text-align:center;color:#FF0000;margin-bottom:10px;font-weight:800;">
+                YouTube Recommendation Engine
+            </h1>
+            <p style="text-align:center;color:#606060;margin-bottom:20px;">
+                Discover videos tailored to your interests with advanced recommendation algorithms
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 
 def render_categories():
     """Render category selection pills"""
-    st.markdown("### Categories")
+    categories = st.session_state.categories
     
-    # Create columns for categories
-    cols = st.columns(5)
+    if not categories:
+        return
     
-    for i, category in enumerate(st.session_state.categories):
-        col_idx = i % 5
+    st.markdown("### Video Categories")
+    
+    # Create a grid of 4 columns
+    cols = st.columns(4)
+    
+    # Add an "All Categories" option
+    if st.session_state.selected_category is None:
+        class_name = "category-pill active"
+    else:
+        class_name = "category-pill"
         
-        with cols[col_idx]:
-            active_class = "active" if category['id'] == st.session_state.current_category else ""
-            category_name = category['title']
+    cols[0].markdown(
+        f"""
+        <div class="{class_name}" onclick="window.location.href='?category=all'">
+            All Categories
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Add each category
+    for i, category in enumerate(categories[:11], 1):  # Limit to 11 categories + All
+        col_idx = i % 4
+        
+        if st.session_state.selected_category == category["id"]:
+            class_name = "category-pill active"
+        else:
+            class_name = "category-pill"
             
-            if st.button(category_name, key=f"cat_{category['id']}"):
-                st.session_state.current_category = category['id']
-                # Reload trending videos with the new category
-                st.session_state.trending_videos = youtube_api.get_trending_videos(category['id'])
-                
-                # Update recommendations if we have a current video
-                if st.session_state.current_video:
-                    st.session_state.recommended_videos = recommendation_engine.get_hybrid_recommendations(
-                        user_id=st.session_state.user_id,
-                        video_id=st.session_state.current_video.get('id'),
-                        category_id=category['id']
-                    )
+        cols[col_idx].markdown(
+            f"""
+            <div class="{class_name}" onclick="window.location.href='?category={category['id']}'">
+                {category['title']}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+    # Add button functionality
+    query_params = st.experimental_get_query_params()
+    if "category" in query_params:
+        category_param = query_params["category"][0]
+        
+        if category_param == "all":
+            st.session_state.selected_category = None
+        else:
+            st.session_state.selected_category = category_param
+            
+        # Clear query params to avoid stale state
+        st.experimental_set_query_params()
+        st.experimental_rerun()
+
 
 def render_current_video():
     """Render the currently selected video"""
-    if not st.session_state.current_video:
-        return
-    
     video = st.session_state.current_video
     
-    st.markdown("## Now Playing")
+    if not video:
+        return
     
-    # Embed YouTube player
-    video_id = video.get('id', '')
-    st.markdown(f'''
-    <div class="iframe-container">
-        <iframe class="responsive-iframe" 
-                src="https://www.youtube.com/embed/{video_id}?autoplay=1" 
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                allowfullscreen>
-        </iframe>
-    </div>
-    ''', unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="section-title">
+            Currently Watching
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
     
-    # Video metadata
-    st.markdown(f"### {video.get('title', 'No Title')}")
-    st.markdown(f"**{video.get('channelTitle', '')}**")
-    
-    # Stats
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Views", format_count(video.get('viewCount', '0')))
-    with col2:
-        st.metric("Likes", format_count(video.get('likeCount', '0')))
-    with col3:
-        st.metric("Comments", format_count(video.get('commentCount', '0')))
-    
-    # Description (expandable)
-    with st.expander("Description"):
-        st.markdown(video.get('description', 'No description available'))
-    
-    # Tags
-    if video.get('tags'):
-        with st.expander("Tags"):
-            tags_html = ' '.join([f'<span class="category-pill">{tag}</span>' for tag in video.get('tags', [])])
-            st.markdown(tags_html, unsafe_allow_html=True)
+    # Create container for video
+    st.markdown(
+        """
+        <div class="current-video-container">
+            <div class="video-player-container">
+                <iframe
+                    src="https://www.youtube.com/embed/{video_id}"
+                    frameborder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen>
+                </iframe>
+            </div>
+            <h2 style="margin-top:15px;font-weight:600;">{title}</h2>
+            <div style="display:flex;justify-content:space-between;margin:10px 0;">
+                <div style="font-weight:500;color:#030303;">{channel}</div>
+                <div style="color:#606060;">{views} views</div>
+            </div>
+            <p style="color:#606060;margin-top:10px;">{description}</p>
+        </div>
+        """.format(
+            video_id=video["id"],
+            title=video["title"],
+            channel=video["channelTitle"],
+            views=format_count(video["viewCount"]),
+            description=video["description"][:300] + "..." if len(video["description"]) > 300 else video["description"]
+        ),
+        unsafe_allow_html=True
+    )
+
 
 def render_video_grid(videos, title, empty_message="No videos available", show_progress=False):
     """Render a grid of video cards"""
     if not videos:
-        st.markdown(f"""
-        <div style="text-align: center; padding: 20px; background-color: white; border-radius: 8px;">
-            <p>{empty_message}</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align:center;color:#606060;'>{empty_message}</p>", unsafe_allow_html=True)
         return
+    
+    st.markdown(f"<div class='section-title'>{title}</div>", unsafe_allow_html=True)
     
     # Create a 3-column grid
     cols = st.columns(3)
     
+    # Iterate through videos
     for i, video in enumerate(videos):
         col_idx = i % 3
         
-        with cols[col_idx]:
-            progress = video.get('watchedPercentage', 0) if show_progress else 0
-            render_video_card(video, show_progress=show_progress, progress=progress)
+        # Get additional attributes
+        progress = video.get("watched_percentage", 0) if show_progress else 0
+        score = video.get("score", None)
+        
+        # Render the video card
+        video_card_html = render_video_card(
+            video, 
+            show_score=(score is not None),
+            score=score,
+            show_progress=show_progress,
+            progress=progress
+        )
+        
+        # Add click handling
+        cols[col_idx].markdown(
+            f"""
+            <a href="?video={video['id']}" style="text-decoration:none;color:inherit;">
+                {video_card_html}
+            </a>
+            """,
+            unsafe_allow_html=True
+        )
+    
+    # Add button functionality for video selection
+    query_params = st.experimental_get_query_params()
+    if "video" in query_params:
+        video_id = query_params["video"][0]
+        handle_video_selection(video_id)
+        
+        # Clear query params to avoid stale state
+        st.experimental_set_query_params()
+        st.experimental_rerun()
+
 
 def render_recommendations():
     """Render recommendation sections"""
+    # Render current video recommendations
     if st.session_state.current_video:
-        st.markdown("## Recommendations")
         render_video_grid(
-            st.session_state.recommended_videos,
-            "Recommendations",
-            "No recommendations available. Try watching some videos first."
+            st.session_state.recommendations,
+            "Recommended for You",
+            "No recommendations available"
         )
     
-    # Trending section
-    st.markdown("## Trending")
-    render_video_grid(
-        st.session_state.trending_videos,
-        "Trending Videos",
-        "No trending videos available for this category."
-    )
-    
-    # Watch history section
-    st.markdown("## Watch History")
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.markdown("### Recently Watched")
-    with col2:
-        if st.session_state.history_videos:
-            st.button("Clear History", on_click=clear_history)
-    
-    render_video_grid(
-        st.session_state.history_videos,
-        "Watch History",
-        "No watch history yet. Videos you watch will appear here.",
-        show_progress=True
-    )
+    # Render history if available
+    if st.session_state.history:
+        render_video_grid(
+            st.session_state.history,
+            "Watch History",
+            "No watch history",
+            show_progress=True
+        )
+        
+        # Add clear history button
+        if st.button("Clear Watch History"):
+            clear_history()
+
 
 def render_search_results():
     """Render search results"""
-    if st.session_state.search_query and st.session_state.videos:
-        st.markdown(f"## Search Results for '{st.session_state.search_query}'")
-        render_video_grid(
-            st.session_state.videos,
-            "Search Results",
-            f"No results found for '{st.session_state.search_query}'."
-        )
+    if not st.session_state.search_results:
+        return
+        
+    search_query = st.session_state.last_search_query if 'last_search_query' in st.session_state else ""
+    
+    render_video_grid(
+        st.session_state.search_results,
+        f"Search Results for '{search_query}'",
+        "No results found"
+    )
+
 
 def render_insights():
     """Render insights and analytics based on user watch history"""
-    if not st.session_state.history_videos:
-        st.markdown("""
-        <div style="text-align: center; padding: 20px; background-color: white; border-radius: 8px;">
-            <p>No watch history available. Watch some videos to see insights.</p>
-        </div>
-        """, unsafe_allow_html=True)
+    history = st.session_state.history
+    
+    if not history or len(history) < 3:
         return
     
-    # Create some basic insights
-    history = st.session_state.history_videos
+    st.markdown("<div class='section-title'>Your Viewing Insights</div>", unsafe_allow_html=True)
     
-    # Category distribution
+    # Create insights container
+    st.markdown("<div class='insights-container'>", unsafe_allow_html=True)
+    
+    # 1. Category distribution
     categories = {}
     for video in history:
-        cat_id = video.get('categoryId', 'Unknown')
-        cat_name = next((c['title'] for c in st.session_state.categories if c['id'] == cat_id), 'Unknown')
-        categories[cat_name] = categories.get(cat_name, 0) + 1
+        category_id = video.get("categoryId", "Unknown")
+        
+        if category_id != "Unknown":
+            # Find category name
+            category_name = "Other"
+            for cat in st.session_state.categories:
+                if cat["id"] == category_id:
+                    category_name = cat["title"]
+                    break
+        else:
+            category_name = "Other"
+            
+        if category_name in categories:
+            categories[category_name] += 1
+        else:
+            categories[category_name] = 1
     
-    # Create dataframe for plotting
-    df_categories = pd.DataFrame({
-        'Category': list(categories.keys()),
-        'Count': list(categories.values())
-    })
+    # Create dataframe and plot
+    if categories:
+        df = pd.DataFrame({
+            "Category": categories.keys(),
+            "Videos Watched": categories.values()
+        })
+        
+        fig = px.pie(
+            df,
+            values="Videos Watched",
+            names="Category",
+            title="Categories You Watch",
+            color_discrete_sequence=px.colors.qualitative.Set3
+        )
+        fig.update_traces(textposition='inside', textinfo='percent+label')
+        fig.update_layout(margin=dict(t=40, b=0, l=0, r=0))
+        
+        st.plotly_chart(fig, use_container_width=True)
     
-    # Channels distribution
+    # 2. Channel distribution
     channels = {}
     for video in history:
-        channel = video.get('channelTitle', 'Unknown')
-        channels[channel] = channels.get(channel, 0) + 1
+        channel = video.get("channelTitle", "Unknown Channel")
+        if channel in channels:
+            channels[channel] += 1
+        else:
+            channels[channel] = 1
     
-    # Sort and get top channels
-    top_channels = dict(sorted(channels.items(), key=lambda x: x[1], reverse=True)[:5])
-    df_channels = pd.DataFrame({
-        'Channel': list(top_channels.keys()),
-        'Count': list(top_channels.values())
-    })
+    # Sort and get top 5
+    top_channels = dict(sorted(channels.items(), key=lambda item: item[1], reverse=True)[:5])
     
-    # Create visualizations
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### Category Distribution")
-        fig = px.pie(df_categories, values='Count', names='Category', 
-                     title='Videos Watched by Category',
-                     color_discrete_sequence=px.colors.qualitative.Set3)
+    if top_channels:
+        df = pd.DataFrame({
+            "Channel": top_channels.keys(),
+            "Videos Watched": top_channels.values()
+        })
+        
+        fig = px.bar(
+            df,
+            x="Channel",
+            y="Videos Watched",
+            title="Your Top Channels",
+            color="Videos Watched",
+            color_continuous_scale="Reds"
+        )
+        fig.update_layout(margin=dict(t=40, b=0, l=0, r=0))
+        
         st.plotly_chart(fig, use_container_width=True)
     
-    with col2:
-        st.markdown("### Top Channels")
-        fig = px.bar(df_channels, x='Channel', y='Count', 
-                     title='Most Watched Channels',
-                     color='Count',
-                     color_continuous_scale='blues')
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Watch time metrics
-    total_videos = len(history)
-    
-    st.markdown("### Watch Metrics")
-    metric_cols = st.columns(3)
-    
-    with metric_cols[0]:
-        st.markdown("""
-        <div class="metric-card">
-            <h3>Total Videos Watched</h3>
-            <h2>{}</h2>
-        </div>
-        """.format(total_videos), unsafe_allow_html=True)
-    
-    with metric_cols[1]:
-        avg_completion = sum(video.get('watchedPercentage', 0) for video in history) / max(total_videos, 1)
-        st.markdown("""
-        <div class="metric-card">
-            <h3>Average Completion</h3>
-            <h2>{:.1f}%</h2>
-        </div>
-        """.format(avg_completion), unsafe_allow_html=True)
-    
-    with metric_cols[2]:
-        # Calculate a mock engagement score
-        engagement_score = min(100, (total_videos * 10) + (avg_completion / 2))
-        st.markdown("""
-        <div class="metric-card">
-            <h3>Engagement Score</h3>
-            <h2>{:.1f}</h2>
-        </div>
-        """.format(engagement_score), unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 def main():
     """Main application function"""
-    # Check if we need to show API form
-    if not st.session_state.api_key_set and st.session_state.get('show_api_form', False):
+    # Check if YouTube API key is available
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key:
         render_api_key_form()
         return
     
-    # Load initial data if needed
-    if not st.session_state.trending_videos:
-        load_initial_data()
-    
-    # Add JavaScript for handling video clicks
-    st.markdown("""
-    <script>
-    function handleVideoClick(videoId) {
-        // Use Streamlit's postMessage to communicate with Python
-        window.parent.postMessage({
-            type: "streamlit:setComponentValue",
-            value: videoId,
-            dataType: "string",
-            key: "selected_video_id"
-        }, "*");
-    }
-    </script>
-    """, unsafe_allow_html=True)
-    
-    # Handle video selection via callback
-    selected_video_id = st.empty()
-    if selected_video_id:
-        handle_video_selection(selected_video_id)
-    
-    # Render header with search
+    # Render application header
     render_header()
+    
+    # Load initial data if needed
+    if not st.session_state.recommendations:
+        with st.spinner("Loading videos..."):
+            load_initial_data()
     
     # Render category selection
     render_categories()
     
-    # Create tab navigation
-    tab1, tab2, tab3 = st.tabs(["Home", "Search", "Insights"])
+    # Create search bar
+    st.markdown("<div class='search-container'>", unsafe_allow_html=True)
+    search_col1, search_col2 = st.columns([4, 1])
+    with search_col1:
+        st.text_input("Search for videos", key="search_query")
+    with search_col2:
+        if st.button("Search"):
+            with st.spinner("Searching..."):
+                handle_search()
+    st.markdown("</div>", unsafe_allow_html=True)
     
-    with tab1:
-        # Render current video if any
-        if st.session_state.current_video:
-            render_current_video()
-        
-        # Render recommendations and trending
-        render_recommendations()
+    # Render current video if selected
+    render_current_video()
     
-    with tab2:
-        # Search form
-        st.markdown("## Video Search")
-        search_query = st.text_input(
-            "Search for videos", 
-            value=st.session_state.search_query,
-            key="search_input_tab",
-            placeholder="Enter keywords..."
-        )
-        
-        if search_query != st.session_state.search_query:
-            st.session_state.search_query = search_query
-            handle_search()
-        
-        # Render search results
-        render_search_results()
+    # Render search results if available
+    render_search_results()
     
-    with tab3:
-        st.markdown("## Watch Insights")
-        render_insights()
+    # Render recommendations and history
+    render_recommendations()
+    
+    # Render insights
+    render_insights()
+    
+    # Add some space at the bottom
+    st.markdown("<br><br>", unsafe_allow_html=True)
+
 
 if __name__ == "__main__":
     main()
