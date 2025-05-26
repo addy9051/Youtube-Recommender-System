@@ -17,30 +17,16 @@ class YouTubeAPI:
 
     def init_api(self):
         """Initialize the YouTube API client"""
-        if not self.api_key:
+        if self.api_key:
+            try:
+                self.youtube = build("youtube", "v3", developerKey=self.api_key)
+                print("YouTube API initialized successfully")
+            except Exception as e:
+                print(f"Error initializing YouTube API: {e}")
+                self.youtube = None
+        else:
             print("No YouTube API key found. Using mock data.")
             self.youtube = None
-            return
-        
-        if not self._validate_api_key(self.api_key):
-            print("Invalid YouTube API key format")
-            self.youtube = None
-            return
-        
-        try:
-            self.youtube = build("youtube", "v3", 
-                               developerKey=self.api_key,
-                               cache_discovery=False)  # Prevent cache issues
-            # Test the API with a simple request
-            self.youtube.videoCategories().list(part="snippet", regionCode="US").execute()
-            print("YouTube API initialized successfully")
-        except Exception as e:
-            print(f"Error initializing YouTube API: {e}")
-            self.youtube = None
-
-    def _validate_api_key(self, key):
-        """Validate YouTube API key format"""
-        return bool(key and len(key) > 20)  # Basic validation
 
     def search_videos(self, query, category_id=None, max_results=10):
         """Search for videos based on a query and optional category"""

@@ -9,20 +9,6 @@ import random
 import plotly.express as px
 from dotenv import load_dotenv
 import os
-import logging
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('app.log'),
-        logging.StreamHandler()
-    ]
-)
-
-# Create logger for this module
-logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -245,81 +231,62 @@ def render_video_card(video, show_score=False, score=None, show_progress=False, 
 
 def load_initial_data():
     """Load initial data for the application"""
-    try:
-        # Get categories
-        categories = youtube_api.get_categories()
-        st.session_state.categories = categories
-        logger.info(f"Loaded {len(categories)} categories")
-        
-        # Get trending videos
-        trending_videos = youtube_api.get_trending_videos(max_results=20)
-        logger.info(f"Loaded {len(trending_videos)} trending videos")
-        
-        # Add videos to recommendation engine
-        recommendation_engine.add_videos(trending_videos)
-        
-        # Store recommendations
-        st.session_state.recommendations = trending_videos
-        
-        return trending_videos
-    except Exception as e:
-        logger.error(f"Error loading initial data: {e}", exc_info=True)
-        st.error("Failed to load initial data. Please try refreshing the page.")
-        return []
+    # Get categories
+    categories = youtube_api.get_categories()
+    st.session_state.categories = categories
+    
+    # Get trending videos
+    trending_videos = youtube_api.get_trending_videos(max_results=20)
+    
+    # Add videos to recommendation engine
+    recommendation_engine.add_videos(trending_videos)
+    
+    # Store recommendations
+    st.session_state.recommendations = trending_videos
+    
+    return trending_videos
 
 
 def handle_search():
     """Handle search functionality"""
-    try:
-        search_query = st.session_state.search_query if 'search_query' in st.session_state else ""
+    search_query = st.session_state.search_query if 'search_query' in st.session_state else ""
+    
+    if search_query:
+        category_id = st.session_state.selected_category if st.session_state.selected_category else None
         
-        if search_query:
-            category_id = st.session_state.selected_category if st.session_state.selected_category else None
-            logger.info(f"Searching for '{search_query}' in category {category_id}")
-            
-            search_results = youtube_api.search_videos(
-                query=search_query,
-                category_id=category_id,
-                max_results=20
-            )
-            
-            # Add videos to recommendation engine
-            recommendation_engine.add_videos(search_results)
-            logger.info(f"Found {len(search_results)} search results")
-            
-            # Store search results
-            st.session_state.search_results = search_results
-            
-            # Store search query
-            st.session_state.last_search_query = search_query
-    except Exception as e:
-        logger.error(f"Error during search: {e}", exc_info=True)
-        st.error("An error occurred during search. Please try again.")
+        search_results = youtube_api.search_videos(
+            query=search_query,
+            category_id=category_id,
+            max_results=20
+        )
+        
+        # Add videos to recommendation engine
+        recommendation_engine.add_videos(search_results)
+        
+        # Store search results
+        st.session_state.search_results = search_results
+        
+        # Store search query
+        st.session_state.last_search_query = search_query
 
 
 def handle_video_selection(video_id):
     """Handle video selection and update recommendations"""
-    try:
-        # Get video details
-        video = youtube_api.get_video_details(video_id)
+    # Get video details
+    video = youtube_api.get_video_details(video_id)
+    
+    if video:
+        # Set as current video
+        st.session_state.current_video = video
         
-        # Set as current video if available
-        if video:
-            st.session_state.current_video = video
-        else:
-            st.warning("Could not load full video details, but will still update recommendations.")
-            # Create a minimal video object with just the ID
-            video = {"id": video_id}
-            st.session_state.current_video = video
-        
-        # Add to watch history (we can do this even with minimal video info)
+        # Add to watch history
         user_id = st.session_state.user_id
         recommendation_engine.add_to_history(user_id, video_id)
         
         # Update history in session
         st.session_state.history = recommendation_engine.get_user_history(user_id)
         
-        # Get recommendations (we can do this with just the video ID)
+        # Get recommendations
         recommendations = recommendation_engine.get_hybrid_recommendations(
             user_id=user_id,
             video_id=video_id,
@@ -329,40 +296,18 @@ def handle_video_selection(video_id):
         
         # Store recommendations
         st.session_state.recommendations = recommendations
-        
-    except Exception as e:
-        st.error(f"Error handling video selection: {str(e)}")
-        logging.error(f"Video selection error: {e}", exc_info=True)
-        # Still try to get recommendations even if other operations failed
-        try:
-            recommendations = recommendation_engine.get_hybrid_recommendations(
-                user_id=st.session_state.user_id,
-                video_id=video_id,
-                category_id=st.session_state.selected_category,
-                limit=20
-            )
-            st.session_state.recommendations = recommendations
-        except Exception as rec_error:
-            st.error("Failed to get recommendations")
-            logging.error(f"Recommendation error: {rec_error}", exc_info=True)
 
 
 def clear_history():
     """Clear user watch history"""
-    try:
-        user_id = st.session_state.user_id
-        recommendation_engine.clear_history(user_id)
-        st.session_state.history = []
-        logger.info(f"Cleared watch history for user {user_id}")
-        st.success("Watch history cleared")
-    except Exception as e:
-        logger.error(f"Error clearing history: {e}", exc_info=True)
-        st.error("Failed to clear watch history")
+    user_id = st.session_state.user_id
+    recommendation_engine.clear_history(user_id)
+    st.session_state.history = []
+    st.success("Watch history cleared")
 
 
 def render_api_key_form():
     """Render form for user to input YouTube API key"""
-    logger.info("Rendering API key form")
     st.markdown("### YouTube API Key Required")
     st.write("To access YouTube data, please provide your YouTube API key.")
     
@@ -374,22 +319,16 @@ def render_api_key_form():
     
     if st.button("Save API Key"):
         if api_key:
-            try:
-                # Set environment variable
-                os.environ["YOUTUBE_API_KEY"] = api_key
-                
-                # Reinitialize YouTube API
-                youtube_api.api_key = api_key
-                youtube_api.init_api()
-                
-                logger.info("API key saved and initialized successfully")
-                st.success("API key saved successfully!")
-                st.experimental_rerun()
-            except Exception as e:
-                logger.error(f"Failed to initialize API with new key: {e}", exc_info=True)
-                st.error("Failed to initialize API with the provided key")
+            # Set environment variable
+            os.environ["YOUTUBE_API_KEY"] = api_key
+            
+            # Reinitialize YouTube API
+            youtube_api.api_key = api_key
+            youtube_api.init_api()
+            
+            st.success("API key saved successfully!")
+            st.experimental_rerun()
         else:
-            logger.warning("Empty API key submitted")
             st.error("Please enter a valid API key")
 
 
@@ -412,177 +351,157 @@ def render_header():
 
 def render_categories():
     """Render category selection pills"""
-    try:
-        categories = st.session_state.categories
+    categories = st.session_state.categories
+    
+    if not categories:
+        return
+    
+    st.markdown("### Video Categories")
+    
+    # Create a grid of 4 columns
+    cols = st.columns(4)
+    
+    # Add an "All Categories" option
+    if st.session_state.selected_category is None:
+        class_name = "category-pill active"
+    else:
+        class_name = "category-pill"
         
-        if not categories:
-            logger.warning("No categories available to render")
-            return
+    cols[0].markdown(
+        f"""
+        <div class="{class_name}" onclick="window.location.href='?category=all'">
+            All Categories
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Add each category
+    for i, category in enumerate(categories[:11], 1):  # Limit to 11 categories + All
+        col_idx = i % 4
         
-        logger.info(f"Rendering {len(categories)} categories")
-        st.markdown("### Video Categories")
-        
-        # Create a grid of 4 columns
-        cols = st.columns(4)
-        
-        # Add an "All Categories" option
-        if st.session_state.selected_category is None:
+        if st.session_state.selected_category == category["id"]:
             class_name = "category-pill active"
         else:
             class_name = "category-pill"
             
-        cols[0].markdown(
+        cols[col_idx].markdown(
             f"""
-            <div class="{class_name}" onclick="window.location.href='?category=all'">
-                All Categories
+            <div class="{class_name}" onclick="window.location.href='?category={category['id']}'">
+                {category['title']}
             </div>
             """,
             unsafe_allow_html=True
         )
         
-        # Add each category
-        for i, category in enumerate(categories[:11], 1):  # Limit to 11 categories + All
-            col_idx = i % 4
+    # Add button functionality
+    query_params = st.experimental_get_query_params()
+    if "category" in query_params:
+        category_param = query_params["category"][0]
+        
+        if category_param == "all":
+            st.session_state.selected_category = None
+        else:
+            st.session_state.selected_category = category_param
             
-            if st.session_state.selected_category == category["id"]:
-                class_name = "category-pill active"
-            else:
-                class_name = "category-pill"
-                
-            cols[col_idx].markdown(
-                f"""
-                <div class="{class_name}" onclick="window.location.href='?category={category['id']}'">
-                    {category['title']}
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-            
-        # Add button functionality
-        query_params = st.query_params()
-        if "category" in query_params:
-            category_param = query_params["category"][0]
-            logger.info(f"Category selected: {category_param}")
-            
-            if category_param == "all":
-                st.session_state.selected_category = None
-            else:
-                st.session_state.selected_category = category_param
-                
-            # Clear query params to avoid stale state
-            st.experimental_set_query_params()
-            st.experimental_rerun()
-    except Exception as e:
-        logger.error(f"Error rendering categories: {e}", exc_info=True)
-        st.error("Failed to load categories")
+        # Clear query params to avoid stale state
+        st.experimental_set_query_params()
+        st.experimental_rerun()
 
 
 def render_current_video():
     """Render the currently selected video"""
-    try:
-        video = st.session_state.current_video
-        
-        if not video:
-            logger.debug("No current video to render")
-            return
-        
-        logger.info(f"Rendering current video: {video.get('id', 'unknown')}")
-        st.markdown(
-            """
-            <div class="section-title">
-                Currently Watching
+    video = st.session_state.current_video
+    
+    if not video:
+        return
+    
+    st.markdown(
+        """
+        <div class="section-title">
+            Currently Watching
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Create container for video
+    st.markdown(
+        """
+        <div class="current-video-container">
+            <div class="video-player-container">
+                <iframe
+                    src="https://www.youtube.com/embed/{video_id}"
+                    frameborder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen>
+                </iframe>
             </div>
-            """,
-            unsafe_allow_html=True
-        )
-        
-        # Create container for video
-        st.markdown(
-            """
-            <div class="current-video-container">
-                <div class="video-player-container">
-                    <iframe
-                        src="https://www.youtube.com/embed/{video_id}"
-                        frameborder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowfullscreen>
-                    </iframe>
-                </div>
-                <h2 style="margin-top:15px;font-weight:600;">{title}</h2>
-                <div style="display:flex;justify-content:space-between;margin:10px 0;">
-                    <div style="font-weight:500;color:#030303;">{channel}</div>
-                    <div style="color:#606060;">{views} views</div>
-                </div>
-                <p style="color:#606060;margin-top:10px;">{description}</p>
+            <h2 style="margin-top:15px;font-weight:600;">{title}</h2>
+            <div style="display:flex;justify-content:space-between;margin:10px 0;">
+                <div style="font-weight:500;color:#030303;">{channel}</div>
+                <div style="color:#606060;">{views} views</div>
             </div>
-            """.format(
-                video_id=video["id"],
-                title=video["title"],
-                channel=video["channelTitle"],
-                views=format_count(video["viewCount"]),
-                description=video["description"][:300] + "..." if len(video["description"]) > 300 else video["description"]
-            ),
-            unsafe_allow_html=True
-        )
-    except Exception as e:
-        logger.error(f"Error rendering current video: {e}", exc_info=True)
-        st.error("Failed to load video player")
+            <p style="color:#606060;margin-top:10px;">{description}</p>
+        </div>
+        """.format(
+            video_id=video["id"],
+            title=video["title"],
+            channel=video["channelTitle"],
+            views=format_count(video["viewCount"]),
+            description=video["description"][:300] + "..." if len(video["description"]) > 300 else video["description"]
+        ),
+        unsafe_allow_html=True
+    )
 
 
 def render_video_grid(videos, title, empty_message="No videos available", show_progress=False):
     """Render a grid of video cards"""
-    try:
-        if not videos:
-            logger.debug(f"No videos to render for {title}")
-            st.markdown(f"<p style='text-align:center;color:#606060;'>{empty_message}</p>", unsafe_allow_html=True)
-            return
+    if not videos:
+        st.markdown(f"<p style='text-align:center;color:#606060;'>{empty_message}</p>", unsafe_allow_html=True)
+        return
+    
+    st.markdown(f"<div class='section-title'>{title}</div>", unsafe_allow_html=True)
+    
+    # Create a 3-column grid
+    cols = st.columns(3)
+    
+    # Iterate through videos
+    for i, video in enumerate(videos):
+        col_idx = i % 3
         
-        logger.info(f"Rendering {len(videos)} videos for {title}")
-        st.markdown(f"<div class='section-title'>{title}</div>", unsafe_allow_html=True)
+        # Get additional attributes
+        progress = video.get("watched_percentage", 0) if show_progress else 0
+        score = video.get("score", None)
         
-        # Create a 3-column grid
-        cols = st.columns(3)
+        # Render the video card
+        video_card_html = render_video_card(
+            video, 
+            show_score=(score is not None),
+            score=score,
+            show_progress=show_progress,
+            progress=progress
+        )
         
-        # Iterate through videos
-        for i, video in enumerate(videos):
-            col_idx = i % 3
-            
-            # Get additional attributes
-            progress = video.get("watched_percentage", 0) if show_progress else 0
-            score = video.get("score", None)
-            
-            # Render the video card
-            video_card_html = render_video_card(
-                video, 
-                show_score=(score is not None),
-                score=score,
-                show_progress=show_progress,
-                progress=progress
-            )
-            
-            # Add click handling
-            cols[col_idx].markdown(
-                f"""
-                <a href="?video={video['id']}" style="text-decoration:none;color:inherit;">
-                    {video_card_html}
-                </a>
-                """,
-                unsafe_allow_html=True
-            )
+        # Add click handling
+        cols[col_idx].markdown(
+            f"""
+            <a href="?video={video['id']}" style="text-decoration:none;color:inherit;">
+                {video_card_html}
+            </a>
+            """,
+            unsafe_allow_html=True
+        )
+    
+    # Add button functionality for video selection
+    query_params = st.experimental_get_query_params()
+    if "video" in query_params:
+        video_id = query_params["video"][0]
+        handle_video_selection(video_id)
         
-        # Add button functionality for video selection
-        query_params =  st.query_params()
-        if "video" in query_params:
-            video_id = query_params["video"][0]
-            logger.info(f"Video selected from grid: {video_id}")
-            handle_video_selection(video_id)
-            
-            # Clear query params to avoid stale state
-            st.experimental_set_query_params()
-            st.experimental_rerun()
-    except Exception as e:
-        logger.error(f"Error rendering video grid: {e}", exc_info=True)
-        st.error("Failed to display videos")
+        # Clear query params to avoid stale state
+        st.experimental_set_query_params()
+        st.experimental_rerun()
 
 
 def render_recommendations():
@@ -709,56 +628,48 @@ def render_insights():
 
 def main():
     """Main application function"""
-    try:
-        # Check if YouTube API key is available
-        api_key = os.environ.get("YOUTUBE_API_KEY")
-        if not api_key:
-            logger.warning("No YouTube API key found")
-            render_api_key_form()
-            return
-        
-        logger.info("Starting application")
-        # Render application header
-        render_header()
-        
-        # Load initial data if needed
-        if not st.session_state.recommendations:
-            with st.spinner("Loading videos..."):
-                load_initial_data()
-        
-        # Render category selection
-        render_categories()
-        
-        # Create search bar
-        st.markdown("<div class='search-container'>", unsafe_allow_html=True)
-        search_col1, search_col2 = st.columns([4, 1])
-        with search_col1:
-            st.text_input("Search for videos", key="search_query")
-        with search_col2:
-            if st.button("Search"):
-                with st.spinner("Searching..."):
-                    handle_search()
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        # Render current video if selected
-        render_current_video()
-        
-        # Render search results if available
-        render_search_results()
-        
-        # Render recommendations and history
-        render_recommendations()
-        
-        # Render insights
-        render_insights()
-        
-        # Add some space at the bottom
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        
-        logger.info("Application rendered successfully")
-    except Exception as e:
-        logger.error(f"Critical error in main application: {e}", exc_info=True)
-        st.error("An unexpected error occurred. Please try refreshing the page.")
+    # Check if YouTube API key is available
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key:
+        render_api_key_form()
+        return
+    
+    # Render application header
+    render_header()
+    
+    # Load initial data if needed
+    if not st.session_state.recommendations:
+        with st.spinner("Loading videos..."):
+            load_initial_data()
+    
+    # Render category selection
+    render_categories()
+    
+    # Create search bar
+    st.markdown("<div class='search-container'>", unsafe_allow_html=True)
+    search_col1, search_col2 = st.columns([4, 1])
+    with search_col1:
+        st.text_input("Search for videos", key="search_query")
+    with search_col2:
+        if st.button("Search"):
+            with st.spinner("Searching..."):
+                handle_search()
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Render current video if selected
+    render_current_video()
+    
+    # Render search results if available
+    render_search_results()
+    
+    # Render recommendations and history
+    render_recommendations()
+    
+    # Render insights
+    render_insights()
+    
+    # Add some space at the bottom
+    st.markdown("<br><br>", unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

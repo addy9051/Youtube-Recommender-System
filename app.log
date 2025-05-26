@@ -1,0 +1,74 @@
+2025-05-26 13:45:35,003 - __main__ - INFO - Starting application
+2025-05-26 13:45:35,135 - __main__ - INFO - Loaded 15 categories
+2025-05-26 13:45:35,448 - __main__ - INFO - Loaded 20 trending videos
+2025-05-26 13:45:35,458 - __main__ - INFO - Rendering 15 categories
+2025-05-26 13:45:35,467 - __main__ - INFO - Application rendered successfully
+2025-05-26 13:58:28,074 - __main__ - INFO - Starting application
+2025-05-26 13:58:28,187 - __main__ - INFO - Loaded 15 categories
+2025-05-26 13:58:28,455 - __main__ - INFO - Loaded 20 trending videos
+2025-05-26 13:58:28,465 - __main__ - INFO - Rendering 15 categories
+2025-05-26 13:58:28,475 - __main__ - INFO - Application rendered successfully
+2025-05-26 13:58:47,659 - __main__ - INFO - Starting application
+2025-05-26 13:58:47,661 - __main__ - INFO - Rendering 15 categories
+2025-05-26 13:58:47,673 - __main__ - INFO - Application rendered successfully
+2025-05-26 13:58:53,839 - __main__ - INFO - Starting application
+2025-05-26 13:58:53,841 - __main__ - INFO - Rendering 15 categories
+2025-05-26 13:58:53,851 - __main__ - INFO - Searching for 'Mission Impossible' in category None
+2025-05-26 13:58:54,623 - __main__ - INFO - Found 20 search results
+2025-05-26 13:58:54,624 - __main__ - INFO - Rendering 20 videos for Search Results for 'Mission Impossible'
+2025-05-26 13:58:54,636 - __main__ - INFO - Application rendered successfully
+2025-05-26 13:59:09,077 - __main__ - INFO - Starting application
+2025-05-26 13:59:09,191 - __main__ - INFO - Loaded 15 categories
+2025-05-26 13:59:09,416 - __main__ - INFO - Loaded 20 trending videos
+2025-05-26 13:59:09,427 - __main__ - INFO - Rendering 15 categories
+2025-05-26 13:59:09,436 - __main__ - INFO - Application rendered successfully
+2025-05-26 13:59:16,493 - __main__ - INFO - Starting application
+2025-05-26 13:59:16,603 - __main__ - INFO - Loaded 15 categories
+2025-05-26 13:59:16,781 - __main__ - INFO - Loaded 20 trending videos
+2025-05-26 13:59:16,792 - __main__ - INFO - Rendering 15 categories
+2025-05-26 13:59:16,802 - __main__ - INFO - Application rendered successfully
+2025-05-26 13:59:25,391 - __main__ - INFO - Starting application
+2025-05-26 13:59:25,495 - __main__ - INFO - Loaded 15 categories
+2025-05-26 13:59:25,682 - __main__ - INFO - Loaded 20 trending videos
+2025-05-26 13:59:25,695 - __main__ - INFO - Rendering 15 categories
+2025-05-26 13:59:25,712 - __main__ - INFO - Application rendered successfully
+2025-05-26 14:03:51,257 - __main__ - INFO - Starting application
+2025-05-26 14:03:51,373 - __main__ - INFO - Loaded 15 categories
+2025-05-26 14:03:51,662 - __main__ - INFO - Loaded 20 trending videos
+2025-05-26 14:03:51,675 - __main__ - INFO - Rendering 15 categories
+2025-05-26 14:03:51,681 - __main__ - ERROR - Error rendering categories: 'QueryParamsProxy' object is not callable
+Traceback (most recent call last):
+  File "C:\Users\ankit\Downloads\Youtube-Recommender-System\app.py", line 462, in render_categories
+    query_params = st.query_params()
+                   ^^^^^^^^^^^^^^^^^
+TypeError: 'QueryParamsProxy' object is not callable
+2025-05-26 14:03:51,686 - __main__ - INFO - Application rendered successfully
+2025-05-26 14:04:09,723 - __main__ - INFO - Starting application
+2025-05-26 14:04:09,724 - __main__ - INFO - Rendering 15 categories
+2025-05-26 14:04:09,732 - __main__ - ERROR - Error rendering categories: 'QueryParamsProxy' object is not callable
+Traceback (most recent call last):
+  File "C:\Users\ankit\Downloads\Youtube-Recommender-System\app.py", line 462, in render_categories
+    query_params = st.query_params()
+                   ^^^^^^^^^^^^^^^^^
+TypeError: 'QueryParamsProxy' object is not callable
+2025-05-26 14:04:09,736 - __main__ - INFO - Searching for 'Mission Impossible' in category None
+2025-05-26 14:04:10,468 - __main__ - INFO - Found 20 search results
+2025-05-26 14:04:10,469 - __main__ - INFO - Rendering 20 videos for Search Results for 'Mission Impossible'
+2025-05-26 14:04:10,484 - __main__ - ERROR - Error rendering video grid: 'QueryParamsProxy' object is not callable
+Traceback (most recent call last):
+  File "C:\Users\ankit\Downloads\Youtube-Recommender-System\app.py", line 574, in render_video_grid
+    query_params =  st.query_params()
+                    ^^^^^^^^^^^^^^^^^
+TypeError: 'QueryParamsProxy' object is not callable
+2025-05-26 14:04:10,487 - __main__ - INFO - Application rendered successfully
+2025-05-26 14:04:13,754 - __main__ - INFO - Starting application
+2025-05-26 14:04:13,856 - __main__ - INFO - Loaded 15 categories
+2025-05-26 14:04:14,052 - __main__ - INFO - Loaded 20 trending videos
+2025-05-26 14:04:14,064 - __main__ - INFO - Rendering 15 categories
+2025-05-26 14:04:14,070 - __main__ - ERROR - Error rendering categories: 'QueryParamsProxy' object is not callable
+Traceback (most recent call last):
+  File "C:\Users\ankit\Downloads\Youtube-Recommender-System\app.py", line 462, in render_categories
+    query_params = st.query_params()
+                   ^^^^^^^^^^^^^^^^^
+TypeError: 'QueryParamsProxy' object is not callable
+2025-05-26 14:04:14,077 - __main__ - INFO - Application rendered successfully

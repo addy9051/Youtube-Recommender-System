@@ -27,8 +27,6 @@ class RecommendationEngine:
             stop_words='english',
             ngram_range=(1, 2)
         )
-        self._cache = {}  # Add caching
-        self._last_update = None  # Track last update time
 
     def add_videos(self, videos_list):
         """Add videos to the recommendation engine"""
@@ -113,11 +111,6 @@ class RecommendationEngine:
         if not self.videos:
             return
             
-        # Only update if necessary
-        if (self._last_update and 
-            (datetime.now() - self._last_update).seconds < 300):  # 5 minutes
-            return
-        
         # Create content text for each video
         video_ids = []
         content_texts = []
@@ -150,7 +143,6 @@ class RecommendationEngine:
         try:
             self.tfidf_matrix = self.vectorizer.fit_transform(content_texts)
             print(f"Updated content vectors for {len(video_ids)} videos")
-            self._last_update = datetime.now()
         except Exception as e:
             print(f"Error creating content vectors: {e}")
             self.tfidf_matrix = None
